@@ -1,16 +1,21 @@
-"""Inference script with strict logging format for validator."""
+"""Inference script with LiteLLM for decision making."""
 
+import os
 import requests
 import json
 import sys
+from openai import OpenAI
 
-# Configuration
-SPACE_URL = "http://localhost:7860"
+SPACE_URL = os.environ.get("SPACE_URL", "http://localhost:7860")
+API_BASE_URL = os.environ.get("API_BASE_URL", "")
+API_KEY = os.environ.get("API_KEY", "dummy")
+
+client = OpenAI(api_key=API_KEY, base_url=API_BASE_URL)
 
 
 def log_start(task_id="easy"):
     """Log episode start with strict format."""
-    print(f"[START] task={task_id} env=openenv model=inference")
+    print(f"[START] task={task_id} env=openenv model=gpt-4o")
 
 
 def log_step(step_num, action, reward, done, error=None):
@@ -29,12 +34,37 @@ def log_end(success, steps, score, rewards):
     )
 
 
+def get_llm_decision(state, step_num):
+    """Get trading decision from LLM."""
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "system",
+                    "content": f"You are a trading agent. Current state: {state}. Available actions: buy, sell, hold. Respond with only one word: buy, sell, or hold.",
+                },
+                {
+                    "role": "user",
+                    "content": f"What action should I take at step {step_num}?",
+                },
+            ],
+            max_tokens=10,
+        )
+        decision = response.choices[0].message.content.strip().lower()
+        if decision not in ["buy", "sell", "hold"]:
+            return "hold"
+        return decision
+    except Exception as e:
+        print(f"[LLM ERROR] {e}", file=sys.stderr)
+        return "hold"
+
+
 def run_episode(task_id="easy"):
-    """Run single episode and log with strict format."""
+    """Run single episode with LLM decision making."""
     try:
         log_start(task_id)
 
-        # Reset environment
         response = requests.post(f"{SPACE_URL}/reset")
         if response.status_code != 200:
             log_end(False, 0, 0.0, [])
@@ -46,23 +76,9 @@ def run_episode(task_id="easy"):
         step = 0
         max_steps = 9
 
-        # Simple greedy strategy: buy low, sell high
-        actions = [
-            "hold",
-            "hold",
-            "hold",
-            "buy",
-            "hold",
-            "hold",
-            "sell",
-            "hold",
-            "hold",
-        ]
-
         while step < max_steps:
-            action = actions[step] if step < len(actions) else "hold"
+            action = get_llm_decision(state, step)
 
-            # Execute step
             response = requests.post(f"{SPACE_URL}/step", json={"action": action})
 
             if response.status_code != 200:
@@ -72,6 +88,7 @@ def run_episode(task_id="easy"):
             result = response.json()
             reward = result.get("reward", 0.0)
             done = result.get("done", False)
+            state = result
             rewards.append(reward)
 
             log_step(step + 1, action, reward, done)
@@ -81,7 +98,6 @@ def run_episode(task_id="easy"):
 
             step += 1
 
-        # Calculate final score
         total_reward = sum(rewards)
         score = min(total_reward / 2.0, 1.0)
 
@@ -102,9 +118,8 @@ def main():
     for task_id in tasks:
         success = run_episode(task_id)
         results.append({"task": task_id, "success": success})
-        print()  # blank line between episodes
+        print()
 
-    # Summary
     print(
         f"[SUMMARY] completed={len(results)} tasks={','.join(t['task'] for t in results)}"
     )
