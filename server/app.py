@@ -2,6 +2,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import logging
+import uvicorn
 
 from server.env import TradingEnv
 from server.models import Tbench2Action, Tbench2Observation
@@ -104,3 +105,12 @@ def close():
     except Exception as e:
         logger.error(f"Close error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def main():
+    """Main entry point for the trading environment server."""
+    uvicorn.run("server.app:app", host="0.0.0.0", port=7860, reload=False)
+
+
+if __name__ == "__main__":
+    main()
