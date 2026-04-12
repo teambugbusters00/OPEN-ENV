@@ -1,97 +1,136 @@
 """Inference script with LiteLLM for decision making."""
 
+import asyncio
 import os
-import requests
 import json
 import sys
+import requests
 from openai import OpenAI
+from typing import List, Optional
 
 SPACE_URL = os.environ.get("SPACE_URL", "http://localhost:7860")
+API_KEY = os.environ.get("API_KEY", "")
 API_BASE_URL = os.environ.get("API_BASE_URL", "")
-API_KEY = os.environ.get("API_KEY", "dummy")
+
+if not API_KEY:
+    API_KEY = os.environ.get("HF_TOKEN", "dummy")
+if not API_BASE_URL:
+    API_BASE_URL = "https://router.huggingface.co/v1"
+
+MODEL_NAME = os.environ.get("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
+MAX_STEPS = 8
+SUCCESS_SCORE_THRESHOLD = 0.4
+TASKS = ["easy", "medium", "hard"]
 
 client = OpenAI(api_key=API_KEY, base_url=API_BASE_URL)
 
 
-def log_start(task_id="easy"):
-    """Log episode start with strict format."""
-    print(f"[START] task={task_id} env=openenv model=gpt-4o")
+def log_start(task: str, env: str, model: str) -> None:
+    print(f"[START] task={task} env={env} model={model}", flush=True)
 
 
-def log_step(step_num, action, reward, done, error=None):
-    """Log step with strict format."""
-    error_str = "null" if error is None else f'"{error}"'
+def log_step(
+    step: int, action: str, reward: float, done: bool, error: Optional[str]
+) -> None:
+    error_val = error if error else "null"
     print(
-        f"[STEP] step={step_num} action={action} reward={reward} done={str(done).lower()} error={error_str}"
+        f"[STEP] step={step} action={action} reward={reward:.2f} done={str(done).lower()} error={error_val}",
+        flush=True,
     )
 
 
-def log_end(success, steps, score, rewards):
-    """Log episode end with strict format."""
+def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
     rewards_str = ",".join(f"{r:.2f}" for r in rewards)
     print(
-        f"[END] success={str(success).lower()} steps={steps} score={score:.2f} rewards={rewards_str}"
+        f"[END] success={str(success).lower()} steps={steps} score={score:.3f} rewards={rewards_str}",
+        flush=True,
     )
 
 
-def get_llm_decision(state, step_num):
+def get_model_action(step: int, obs_dict: dict) -> dict:
     """Get trading decision from LLM."""
     try:
-        response = client.chat.completions.create(
-            model="gpt-4o",
+        user_prompt = f"Step: {step}\nCurrent State: {json.dumps(obs_dict)}\n\nAvailable actions: buy, sell, hold. Respond with a JSON object with 'action' key only."
+
+        completion = client.chat.completions.create(
+            model=MODEL_NAME,
             messages=[
                 {
                     "role": "system",
-                    "content": f"You are a trading agent. Current state: {state}. Available actions: buy, sell, hold. Respond with only one word: buy, sell, or hold.",
+                    "content": "You are a trading agent. Analyze the current state and respond with a JSON object containing only one key: 'action' with value 'buy', 'sell', or 'hold'.",
                 },
-                {
-                    "role": "user",
-                    "content": f"What action should I take at step {step_num}?",
-                },
+                {"role": "user", "content": user_prompt},
             ],
-            max_tokens=10,
+            temperature=0.0,
+            max_tokens=50,
         )
-        decision = response.choices[0].message.content.strip().lower()
-        if decision not in ["buy", "sell", "hold"]:
-            return "hold"
-        return decision
+
+        text = (completion.choices[0].message.content or "").strip()
+
+        # Parse JSON from response
+        try:
+            data = json.loads(text)
+            action = data.get("action", "hold")
+        except:
+            # Fallback: extract action from text
+            text_lower = text.lower()
+            if "buy" in text_lower:
+                action = "buy"
+            elif "sell" in text_lower:
+                action = "sell"
+            else:
+                action = "hold"
+
+        if action not in ["buy", "sell", "hold"]:
+            action = "hold"
+        return {"action": action}
+
     except Exception as e:
         print(f"[LLM ERROR] {e}", file=sys.stderr)
-        return "hold"
+        return {"action": "hold", "error": str(e)}
 
 
-def run_episode(task_id="easy"):
+async def run_episode(task_id: str = "easy"):
     """Run single episode with LLM decision making."""
     try:
-        log_start(task_id)
+        log_start(task=task_id, env="openenv", model=MODEL_NAME)
 
-        response = requests.post(f"{SPACE_URL}/reset")
+        response = requests.post(f"{SPACE_URL}/reset", timeout=30)
         if response.status_code != 200:
             log_end(False, 0, 0.001, [])
             return False
 
         state = response.json()
+        obs_dict = state.get("state", {})
 
         rewards = []
         step = 0
-        max_steps = 9
+        max_steps = MAX_STEPS
+        last_reward = 0.0
 
         while step < max_steps:
-            action = get_llm_decision(state, step)
+            ai_response = get_model_action(step, obs_dict)
+            action = ai_response.get("action", "hold")
+            error = ai_response.get("error")
 
-            response = requests.post(f"{SPACE_URL}/step", json={"action": action})
+            response = requests.post(
+                f"{SPACE_URL}/step", json={"action": action}, timeout=30
+            )
 
             if response.status_code != 200:
                 log_step(step + 1, action, 0.001, True, "API error")
                 break
 
             result = response.json()
-            reward = result.get("reward", 0.0)
+            reward = result.get("reward", 0.001)
             done = result.get("done", False)
-            state = result
+            obs_dict = result.get("state", {})
             rewards.append(reward)
+            last_reward = reward
 
-            log_step(step + 1, action, reward, done)
+            log_step(
+                step=step + 1, action=action, reward=reward, done=done, error=error
+            )
 
             if done:
                 break
@@ -100,12 +139,11 @@ def run_episode(task_id="easy"):
 
         total_reward = sum(rewards)
         score = min(total_reward / 2.0, 1.0)
-        score = max(0.001, score)
-        score = 0.999 if score >= 1.0 else score
-        if score == 0.0:
-            score = 0.001
+        score = min(max(score, 0.001), 0.999)
 
-        log_end(True, len(rewards), score, rewards)
+        success = score >= SUCCESS_SCORE_THRESHOLD
+
+        log_end(success=success, steps=step + 1, score=score, rewards=rewards)
         return True
 
     except Exception as e:
@@ -114,23 +152,11 @@ def run_episode(task_id="easy"):
         return False
 
 
-def main():
+async def main():
     """Run inference with all tasks."""
-    tasks = ["easy", "medium", "hard"]
-    results = []
-
-    for task_id in tasks:
-        success = run_episode(task_id)
-        results.append({"task": task_id, "success": success})
-        print()
-
-    print(
-        f"[SUMMARY] completed={len(results)} tasks={','.join(t['task'] for t in results)}"
-    )
-
-    return all(r["success"] for r in results)
+    for task_id in TASKS:
+        await run_episode(task_id)
 
 
 if __name__ == "__main__":
-    success = main()
-    sys.exit(0 if success else 1)
+    asyncio.run(main())
