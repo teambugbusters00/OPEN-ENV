@@ -67,7 +67,7 @@ def run_episode(task_id="easy"):
 
         response = requests.post(f"{SPACE_URL}/reset")
         if response.status_code != 200:
-            log_end(False, 0, 0.0, [])
+            log_end(False, 0, 0.001, [])
             return False
 
         state = response.json()
@@ -82,7 +82,7 @@ def run_episode(task_id="easy"):
             response = requests.post(f"{SPACE_URL}/step", json={"action": action})
 
             if response.status_code != 200:
-                log_step(step + 1, action, 0.0, True, "API error")
+                log_step(step + 1, action, 0.001, True, "API error")
                 break
 
             result = response.json()
@@ -100,13 +100,17 @@ def run_episode(task_id="easy"):
 
         total_reward = sum(rewards)
         score = min(total_reward / 2.0, 1.0)
+        score = max(0.001, score)
+        score = 0.999 if score >= 1.0 else score
+        if score == 0.0:
+            score = 0.001
 
         log_end(True, len(rewards), score, rewards)
         return True
 
     except Exception as e:
         print(f"[ERROR] {str(e)}", file=sys.stderr)
-        log_end(False, 0, 0.0, [])
+        log_end(False, 0, 0.001, [])
         return False
 
 

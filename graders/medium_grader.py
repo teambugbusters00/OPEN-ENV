@@ -3,10 +3,10 @@
 
 def grade_medium(trades: list) -> dict:
     """Grade medium trading task.
-    
+
     Args:
         trades: list of rewards from episode
-        
+
     Returns:
         {
             "score": float in [0, 1],
@@ -16,25 +16,21 @@ def grade_medium(trades: list) -> dict:
     """
     if not trades:
         return {
-            "score": 0.0,
+            "score": 0.001,
             "feedback": "No trades executed. Required: handle volatility without overtrading.",
-            "max_possible": 1.0
+            "max_possible": 1.0,
         }
 
     total_reward = sum(trades)
     num_trades = len(trades)
-    max_reward = 1.5  # max profit of 15 / 10 normalization
-    
-    # Penalize excessive trading
+    max_reward = 1.5
+
     overtrading_penalty = max(0, (num_trades - 2) * 0.05)
-    
+
     score = min(total_reward / max_reward, 1.0) - overtrading_penalty
-    score = max(0.0, score)
-    
+    score = max(0.001, score)
+    score = 0.999 if score >= 1.0 else score
+
     feedback = f"Total reward: {total_reward:.2f}, trades: {num_trades}. Strategy: volatility management."
-    
-    return {
-        "score": round(score, 3),
-        "feedback": feedback,
-        "max_possible": 1.0
-    }
+
+    return {"score": round(score, 3), "feedback": feedback, "max_possible": 1.0}
