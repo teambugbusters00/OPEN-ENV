@@ -16,30 +16,27 @@ class TradingEnv:
         self.entry = 0
         self.trades = []
 
-        return {
-            "state": self._get_state(),
-            "info": {"error": None}
-        }
+        return {"state": self._get_state(), "info": {"error": None}}
 
     def _get_state(self):
         """Get current market state."""
         return {
             "price": self.prices[self.idx],
             "trend": self.prices[self.idx] - self.prices[self.idx - 1],
-            "position": self.position
+            "position": self.position,
         }
 
     def step(self, action: str):
         """Execute trading action and step environment.
-        
+
         Args:
             action: Trading action - "buy", "sell", or "hold"
-            
+
         Returns:
             dict with state, reward, done, info
         """
         price = self.prices[self.idx]
-        reward = 0.0
+        reward = 0.001
         done = False
 
         if action == "buy" and self.position is None:
@@ -57,14 +54,13 @@ class TradingEnv:
         if self.idx >= len(self.prices):
             done = True
 
-        # Clamp reward to [0, 1]
-        reward = max(0.0, min(reward, 1.0))
+        reward = max(0.001, min(reward, 0.999))
 
         return {
             "state": self._get_state(),
             "reward": round(reward, 2),
             "done": done,
-            "info": {"error": None}
+            "info": {"error": None},
         }
 
     def close(self):
@@ -74,10 +70,10 @@ class TradingEnv:
     def get_score(self):
         """Calculate normalized score from trades."""
         if not self.trades:
-            return 0.0
-        
+            return 0.001
+
         total_profit = sum(self.trades)
-        max_profit = 20.0  # max possible
-        
+        max_profit = 20.0
+
         score = total_profit / max_profit
-        return max(0.0, min(score, 1.0))
+        return max(0.001, min(score, 0.999))
