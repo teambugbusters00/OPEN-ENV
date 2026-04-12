@@ -3,10 +3,9 @@ title: OPEN-ENV
 emoji: 🤖
 colorFrom: blue
 colorTo: green
-sdk: streamlit
-sdk_version: "1.37.0"
-python_version: "3.11"
-app_file: server/app.py
+sdk: docker
+python_version: "3.10"
+app_file: Dockerfile
 pinned: false
 ---
 
