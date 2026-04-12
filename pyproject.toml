@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=65.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "trading-env"
+version = "1.0.0"
+description = "OpenEnv trading environment with multi-task evaluation"
+authors = [
+    {name = "OpenEnv", email = "openenv@huggingface.co"}
+]
+license = {text = "Apache-2.0"}
+readme = "README.md"
+requires-python = ">=3.10"
+keywords = ["trading", "reinforcement-learning", "quantitative-finance"]
+
+dependencies = [
+    "fastapi>=0.104.0",
+    "uvicorn>=0.24.0",
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "python-dotenv>=1.0.0",
+    "requests>=2.31.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+]
+
+[project.urls]
+Repository = "https://github.com/openenv/trading-env"
+Documentation = "https://github.com/openenv/trading-env"
+
+[tool.setuptools]
+packages = ["server", "tasks", "graders"]

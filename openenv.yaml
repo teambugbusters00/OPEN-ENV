@@ -1,0 +1,54 @@
+name: trading_env
+version: 1.0.0
+description: "Quantitative trading environment with multi-task evaluation"
+
+tasks:
+  - id: easy
+    name: "Easy Trading Task"
+    description: "Simple upward trend identification"
+    grader: graders.easy_grader:grade_easy
+    max_steps: 9
+  
+  - id: medium
+    name: "Medium Trading Task"
+    description: "Volatile market navigation"
+    grader: graders.medium_grader:grade_medium
+    max_steps: 9
+  
+  - id: hard
+    name: "Hard Trading Task"
+    description: "Fake breakout detection and risk control"
+    grader: graders.hard_grader:grade_hard
+    max_steps: 9
+
+environment:
+  type: trading
+  api_version: v1
+  endpoints:
+    - /reset
+    - /step
+    - /close
+  
+  state:
+    - name: price
+      type: float
+      description: Current market price
+    
+    - name: trend
+      type: float
+      description: Price change from previous step
+    
+    - name: position
+      type: string
+      description: Current trading position (null, long, short)
+  
+  actions:
+    - name: action
+      type: string
+      description: Trading action
+      values: ["buy", "sell", "hold"]
+
+reward:
+  type: float
+  range: [0, 1]
+  description: "Normalized profit/loss from trades"
